@@ -1,0 +1,11 @@
+[package]
+name = "birthday_greetings"
+version = "0.1.0"
+authors = ["Michele d'Amico <michele.damico@rcslab.it>"]
+edition = "2018"
+
+[dependencies]
+chrono = "*"
+
+[dev-dependencies]
+temp_testdir = "0.2"
