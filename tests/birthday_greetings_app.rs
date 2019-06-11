@@ -67,7 +67,7 @@ impl SmtpServer<Created> {
             .map_err(|e| e.description().to_owned())
             .and_then(|o|
                 if o.status.success() {
-                    Ok(format!("{}", String::from_utf8_lossy(&o.stdout).trim()))
+                    Ok(String::from_utf8_lossy(&o.stdout).trim().to_owned())
                 } else {
                     eprintln!("On starting docker imege {}: \
                 out -> {}\
