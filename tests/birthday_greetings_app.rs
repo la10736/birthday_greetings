@@ -10,6 +10,7 @@ use std::error::Error;
 
 static APP_PATH: &'static str = "target/debug/birthday_greetings";
 static SMTP_DOCKER_IMAGE: &'static str = "fake_smtp";
+static SMTP_DOCKER_FILE_DIR: &'static str = "fake_smtp_docker";
 
 trait SmtpServerState {}
 struct Created;
@@ -129,10 +130,11 @@ fn build_smtp_container<P: AsRef<Path>>(name: &str, path: P) -> Result<(),String
 }
 
 fn smtp_server() -> SmtpServer<Initialized> {
-    build_smtp_container(SMTP_DOCKER_IMAGE, "fake_smtp_docker")
+    build_smtp_container(SMTP_DOCKER_IMAGE, SMTP_DOCKER_FILE_DIR)
         .expect("Cannot build smtp docker image");
-    let server = SmtpServer::new(SMTP_DOCKER_IMAGE);
-    server.start().expect("Cannot start smtp server")
+    SmtpServer::new(SMTP_DOCKER_IMAGE)
+        .start()
+        .expect("Cannot start smtp server")
 }
 
 #[test]
