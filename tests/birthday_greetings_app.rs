@@ -7,6 +7,7 @@ use std::io::Write;
 use chrono::{Datelike, Duration};
 use std::ops::Add;
 use std::error::Error;
+use json;
 
 static APP_PATH: &'static str = "target/debug/birthday_greetings";
 static SMTP_DOCKER_IMAGE: &'static str = "fake_smtp";
@@ -18,6 +19,7 @@ struct Initialized;
 impl SmtpServerState for Created {}
 impl SmtpServerState for Initialized {}
 use std::marker::PhantomData;
+use json::JsonValue;
 
 struct SmtpServer<S: SmtpServerState> {
     img_name: String,
@@ -84,9 +86,59 @@ impl SmtpServer<Created> {
 }
 
 impl SmtpServer<Initialized> {
-    pub fn address(&self) -> String {
-        "smtp.host:1234".to_owned()
+    pub fn address(&self) -> Result<String, String> {
+        let j = self.inspect()?;
+        Ok(format!("{}:2525", &j[0]["NetworkSettings"]["IPAddress"]))
     }
+
+    pub fn logs(&self) -> Result<String, String> {
+        Command::new("docker")
+            .arg("logs")
+            .arg(self.id())
+            .output()
+            .map_err(|e| e.description().to_owned())
+            .and_then(|o|
+                if o.status.success() {
+                    Ok(String::from_utf8_lossy(&o.stdout).trim().to_owned())
+                } else {
+                    eprintln!("On inspecting docker logs {}: \
+                out -> {}\
+                err -> {}", self.id(),
+                              String::from_utf8_lossy(&o.stdout),
+                              String::from_utf8_lossy(&o.stderr)
+                    );
+                    Err("Cannot inspect docker logs".to_owned())
+                }
+            )
+    }
+
+    fn id(&self) -> &str {
+        self.docker_id.as_ref().unwrap()
+    }
+
+    fn inspect(&self) -> Result<JsonValue, String> {
+        Command::new("docker")
+            .arg("inspect")
+            .arg(self.id())
+            .output()
+            .map_err(|e| e.description().to_owned())
+            .and_then(|o|
+                if o.status.success() {
+                    json::parse(&String::from_utf8_lossy(&o.stdout))
+                        .map_err(|e| e.description().to_owned())
+                } else {
+                    eprintln!("On inspecting docker imege {}: \
+                out -> {}\
+                err -> {}", self.id(),
+                              String::from_utf8_lossy(&o.stdout),
+                              String::from_utf8_lossy(&o.stderr)
+                    );
+                    Err("Cannot inspect docker image".to_owned())
+                }
+            )
+    }
+
+
 }
 
 fn docker_image_exists(name: &str) -> bool {
@@ -141,11 +193,12 @@ fn smtp_server() -> SmtpServer<Initialized> {
 fn should_fail() {
     // TODO:
     //  - [x] instantiate docker server
-    //  - [ ] get address
+    //  - [x] get address
     //  - [x] Add two employees to a csv file (one with birthday today and the other tomorrow)
-    //  - [ ] run app
+    //  - [x] run app
     //  - [ ] check docker server output to find receipts for the one that today is hos birthday
-    //  - [ ] close docker server
+    //  - [x] close docker server
+    //  - [ ] Refactor docker calls
 
     // Run App
     let employees = "tests/resources/employees.csv";
@@ -175,9 +228,11 @@ fn should_fail() {
 
     let out = Command::new(&Path::new(APP_PATH))
         .arg(employees)
-        .arg(&smtp_server.address())
+        .arg(dbg!(&smtp_server.address().unwrap()))
         .output()
         .expect(&format!("Cannot start App '{}'", APP_PATH));
+
+    let logs = smtp_server.logs().expect("Cannot read smtp server logs");
 
     unimplemented!("Should be completed")
 }
