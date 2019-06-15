@@ -143,6 +143,16 @@ impl SmtpServer<Initialized> {
         Ok(format!("{}:2525", &j[0]["NetworkSettings"]["IPAddress"]))
     }
 
+    pub fn till_logs(self, predicate: impl Fn(&str) -> bool, timeout: Duration) -> Result<Self, String> {
+        let end = chrono::Local::now() + timeout;
+        while chrono::Local::now() < end {
+            if predicate(&self.logs()?) {
+                return Ok(self)
+            }
+        }
+        Err(format!("Cannot find given predicate in logs after {} ms", timeout.num_milliseconds()))
+    }
+
     pub fn logs(&self) -> Result<String, String> {
         DockerCommand.logs(self.id())
     }
@@ -165,21 +175,13 @@ fn smtp_server() -> SmtpServer<Initialized> {
         .expect("Cannot build smtp docker image");
     SmtpServer::new(SMTP_DOCKER_IMAGE)
         .start()
-        .expect("Cannot start smtp server")
+        .expect("Cannot init smtp server")
+        .till_logs(|logs| logs.contains("started"), Duration::seconds(5))
+        .expect("Cannot init smtp server")
 }
 
 #[test]
-fn should_fail() {
-    // TODO:
-    //  - [x] instantiate docker server
-    //  - [x] get address
-    //  - [x] Add two employees to a csv file (one with birthday today and the other tomorrow)
-    //  - [x] run app
-    //  - [ ] check docker server output to find receipts for the one that today is hos birthday
-    //  - [x] close docker server
-    //  - [ ] Refactor docker calls
-
-    // Run App
+fn should_send_one_email_to_paolino_paperino() {
     let employees = "tests/resources/employees.csv";
     let temp = TempDir::default();
     let mut file_path = PathBuf::from(temp.as_ref());
@@ -207,7 +209,7 @@ fn should_fail() {
 
     let smtp_server = smtp_server();
 
-    let out = Command::new(&Path::new(APP_PATH))
+    Command::new(&Path::new(APP_PATH))
         .arg(employees)
         .arg(dbg!(&smtp_server.address().unwrap()))
         .output()
@@ -215,5 +217,64 @@ fn should_fail() {
 
     let logs = smtp_server.logs().expect("Cannot read smtp server logs");
 
-    unimplemented!("Should be completed")
+    assert_in!(logs, format!("RCPT TO:<{}>", "paolino.paperino@dmail.com"));
+    assert_not_in!(logs, format!("RCPT TO:<{}>", "paperon.depaperoni@dmail.com"));
+}
+
+#[macro_export]
+macro_rules! assert_in {
+    ($text:expr, $message:expr) => ({
+        match (&$text, &$message) {
+            (text_val, message_val) => {
+                if !text_val.contains(message_val) {
+                    panic!(r#"assertion failed: `text not contains message`
+         text: `{}`,
+         message: `{}`"#, text_val, message_val)
+                }
+            }
+        }
+        });
+    ($message:expr, $expected:expr, ) => (
+        assert_in!($message, $expected)
+    );
+    ($text:expr, $message:expr, $($arg:tt)+) => ({
+        match (&$text, &$message) {
+            (text_val, message_val) => {
+                if !text_val.contains(message_val) {
+                    panic!(r#"assertion failed: `text not contains message`
+         text: `{}`,
+         message: `{}`: {}"#, text_val, message_val, format_args!($($arg)+))
+                }
+            }
+        }
+        });
+}
+
+#[macro_export]
+macro_rules! assert_not_in {
+    ($text:expr, $message:expr) => ({
+        match (&$text, &$message) {
+            (text_val, message_val) => {
+                if text_val.contains(message_val) {
+                    panic!(r#"assertion failed: `text contains message`
+         text: `{}`,
+         message: `{}`"#, text_val, message_val)
+                }
+            }
+        }
+        });
+    ($message:expr, $expected:expr, ) => (
+        assert_in!($message, $expected)
+    );
+    ($text:expr, $message:expr, $($arg:tt)+) => ({
+        match (&$text, &$message) {
+            (text_val, message_val) => {
+                if text_val.contains(message_val) {
+                    panic!(r#"assertion failed: `text contains message`
+         text: `{}`,
+         message: `{}`: {}"#, text_val, message_val, format_args!($($arg)+))
+                }
+            }
+        }
+        });
 }
