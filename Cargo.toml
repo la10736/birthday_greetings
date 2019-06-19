@@ -10,3 +10,4 @@ chrono = "*"
 [dev-dependencies]
 temp_testdir = "0.2"
 json = "*"
+rstest = {path = "../rstest"}
