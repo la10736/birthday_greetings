@@ -1,7 +1,7 @@
 // TODO: Remove me
 #![allow(unused_variables)]
 
-use chrono::{NaiveDate, Local};
+use chrono::{NaiveDate, Local, Datelike};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Employ{
@@ -63,10 +63,13 @@ impl<R: Repository, S: SendService> BirthdayGreetingService<R, S> {
     }
 
     pub fn send_greetings(&self, date: NaiveDate) {
-        self.repository.entries().for_each(|e| self.send_service.send(e))
+        let is_birthday = |e: &&Employ| e.birthday.day() == date.day() && e.birthday.month() == date.month();
+
+        self.repository.entries()
+            .filter(is_birthday)
+            .for_each(|e| self.send_service.send(e))
     }
 }
-
 
 fn main() {
     let repository = CsvRepository::by_path(
@@ -79,7 +82,6 @@ fn main() {
     birthday_service.send_greetings(Local::today().naive_local());
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -90,15 +92,18 @@ mod test {
     use std::rc::Rc;
     use core::borrow::Borrow;
 
-    impl Repository for Vec<Employ> {
+    type Employees = Vec<Employ>;
+    type RcEmployees = Rc<Employees>;
+
+    impl Repository for Employees {
         fn entries<'iter, 's:'iter>(&'s self) -> Box<dyn Iterator<Item=&'s Employ> + 'iter> {
             Box::new(self.iter())
         }
     }
 
-    impl Repository for Rc<Vec<Employ>> {
+    impl Repository for RcEmployees {
         fn entries<'iter, 's:'iter>(&'s self) -> Box<dyn Iterator<Item=&'s Employ> + 'iter> {
-            let vref: &Vec<Employ> = self.borrow();
+            let vref: &Employees = self.borrow();
             vref.entries()
         }
     }
@@ -109,6 +114,16 @@ mod test {
     }
 
     impl<D: Default> AsRc for D {}
+
+    trait AsSet<T: Clone> {
+        fn as_set(&self) -> HashSet<T>;
+    }
+    impl AsSet<Employ> for RcEmployees {
+        fn as_set(&self) -> HashSet<Employ> {
+            self.iter().cloned().collect()
+        }
+    }
+
 
     #[derive(Default)]
     struct NotCallService;
@@ -127,8 +142,8 @@ mod test {
         }
     }
     impl NoMoreThanOneCallService {
-        fn present(&self, employ: &Employ) -> bool {
-            self.calls.borrow().contains(employ)
+        fn notified(&self) -> HashSet<Employ> {
+            self.calls.borrow().clone()
         }
     }
 
@@ -156,17 +171,14 @@ mod test {
             .expect("Cannot parse date")
     }
 
-    type Employees = Rc<Vec<Employ>>;
-
-    fn employee(data: &[&str]) -> Employees {
+    fn employee(data: &[&str]) -> RcEmployees {
         data.iter()
             .map(Employ::from)
             .collect::<Vec<_>>()
             .into()
     }
 
-    #[fixture]
-    fn no_employees() -> Employees {
+    fn no_employees() -> RcEmployees {
         employee(&[])
     }
 
@@ -175,28 +187,32 @@ mod test {
         NoMoreThanOneCallService::default()
     }
 
-    #[rstest]
-    fn should_not_send_any_mail_if_no_employs(no_employees: impl Repository) {
-        let birthday_service = BirthdayGreetingService::new(no_employees,
+    #[rstest_parametrize(employees, date,
+        case::no_employees(no_employees(), date("2018/12/3")),
+        case::no_birthday_miss_month(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/1/1")),
+        case::no_birthday_miss_day(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/5/4")),
+    )]
+    fn should_not_send_any_mail(employees: RcEmployees, date: NaiveDate) {
+        let birthday_service = BirthdayGreetingService::new(employees,
                                                             NotCallService);
 
-        birthday_service.send_greetings(NaiveDate::from_ymd(2018,12,3));
+        birthday_service.send_greetings(date);
     }
 
     #[rstest_parametrize(repo, date, expected,
         case(employee(&["John,Doe,1998/12/3"]), date("2018/12/3"),employee(&["John,Doe,1998/12/3"])),
-        case(employee(&["Bernard,Trum,1992/11/1", "Ronald,Dump,1995/11/1"]), date("2018/11/1"),
-        employee(&["Bernard,Trum,1992/11/1", "Ronald,Dump,1995/11/1"]))
+        case(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"]), date("2018/11/1"),
+                employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"])),
+        case::just_one(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/11/1"),
+            employee(&["Bernard,Trump,1992/11/1"]))
     )]
-    fn should_send_email(just_one_call: NoMoreThanOneCallService, repo: Employees, date: NaiveDate, expected: Employees) {
+    fn should_send_email(just_one_call: NoMoreThanOneCallService, repo: RcEmployees, date: NaiveDate, expected: RcEmployees) {
         let service = Rc::new(just_one_call);
 
         let birthday_service = BirthdayGreetingService::new(repo.clone(),
                                                             service.clone());
         birthday_service.send_greetings(date);
 
-        expected.iter().for_each( |e|
-            assert!(service.present(&e))
-        )
+        assert_eq!(service.notified(), expected.as_set());
     }
 }
