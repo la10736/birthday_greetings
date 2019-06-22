@@ -6,13 +6,13 @@ use chrono::{NaiveDate, Local, Datelike};
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 struct Employ{
     name: String,
-    lastname: String,
+    surname: String,
     birthday: NaiveDate
 }
 
 impl Employ {
-    pub fn new(name: &str, lastname: &str, birthday: NaiveDate) -> Self {
-        Employ{ name: name.to_owned(), lastname: lastname.to_owned(), birthday }
+    pub fn new(name: &str, surname: &str, birthday: NaiveDate) -> Self {
+        Employ{ name: name.to_owned(), surname: surname.to_owned(), birthday }
     }
 }
 
@@ -159,10 +159,10 @@ mod test {
         fn from(s: S) -> Self {
             let mut data = s.as_ref().splitn(3, ',');
             let name = data.next().expect("Cannot find name").trim();
-            let lastname = data.next().expect("Cannot find lastname").trim();
-            let birth = date(data.next().expect("Cannot find lastname"));
+            let surname = data.next().expect("Cannot find surname").trim();
+            let birth = date(data.next().expect("Cannot find birth date"));
 
-            return Employ::new(name, lastname, birth)
+            return Employ::new(name, surname, birth)
         }
     }
 
