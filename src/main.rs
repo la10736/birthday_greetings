@@ -3,39 +3,15 @@
 
 use chrono::{NaiveDate, Local, Datelike};
 
+mod employ;
+/// Rexport
+pub use employ::Employ;
+
 mod repositories;
 use repositories::*;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Employ{
-    name: String,
-    surname: String,
-    birthday: NaiveDate,
-    email: String,
-}
-
-impl Employ {
-    pub fn new(name: &str, surname: &str, birthday: NaiveDate, email: &str) -> Self {
-        Employ{ name: name.to_owned(), surname: surname.to_owned(), birthday, email: email.to_owned() }
-    }
-}
-
-trait SendService {
-    fn send(&self, employ: &Employ);
-}
-struct SmtpService {}
-
-impl SendService for SmtpService {
-    fn send(&self, employ: &Employ) {
-        unimplemented!()
-    }
-}
-
-impl SmtpService {
-    pub fn new(address: impl AsRef<str>) -> Self {
-        Self {}
-    }
-}
+mod send_services;
+use send_services::*;
 
 struct BirthdayGreetingService<R: Repository, S: SendService> {
     repository: R,
@@ -139,25 +115,12 @@ mod test {
         }
     }
 
-    impl<S: AsRef<str>> From<S> for Employ {
-
-        fn from(s: S) -> Self {
-            let mut data = s.as_ref().splitn(4, ',');
-            let name = data.next().expect("Cannot find name").trim();
-            let surname = data.next().expect("Cannot find surname").trim();
-            let birth = date(data.next().expect("Cannot find birth date"));
-            let email = data.next().unwrap_or_default();
-
-            return Employ::new(name, surname, birth, email)
-        }
-    }
-
-    fn date<S: AsRef<str>>(data: S) -> NaiveDate {
+    pub fn date<S: AsRef<str>>(data: S) -> NaiveDate {
         NaiveDate::parse_from_str(data.as_ref(),"%Y/%m/%d")
             .expect("Cannot parse date")
     }
 
-    fn employee(data: &[&str]) -> RcEmployees {
+    fn employees(data: &[&str]) -> RcEmployees {
         data.iter()
             .map(Employ::from)
             .collect::<Vec<_>>()
@@ -165,7 +128,7 @@ mod test {
     }
 
     fn no_employees() -> RcEmployees {
-        employee(&[])
+        employees(&[])
     }
 
     #[fixture]
@@ -175,8 +138,8 @@ mod test {
 
     #[rstest_parametrize(employees, date,
         case::no_employees(no_employees(), date("2018/12/3")),
-        case::no_birthday_miss_month(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/1/1")),
-        case::no_birthday_miss_day(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/5/4")),
+        case::no_birthday_miss_month(employees(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/1/1")),
+        case::no_birthday_miss_day(employees(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/5/4")),
     )]
     fn should_not_send_any_mail(employees: RcEmployees, date: NaiveDate) {
         let birthday_service = BirthdayGreetingService::new(employees,
@@ -186,11 +149,11 @@ mod test {
     }
 
     #[rstest_parametrize(repo, date, expected,
-        case(employee(&["John,Doe,1998/12/3"]), date("2018/12/3"),employee(&["John,Doe,1998/12/3"])),
-        case(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"]), date("2018/11/1"),
-                employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"])),
-        case::just_one(employee(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/11/1"),
-            employee(&["Bernard,Trump,1992/11/1"]))
+        case(employees(&["John,Doe,1998/12/3"]), date("2018/12/3"),employees(&["John,Doe,1998/12/3"])),
+        case(employees(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"]), date("2018/11/1"),
+                employees(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/11/1"])),
+        case::just_one(employees(&["Bernard,Trump,1992/11/1", "Ronald,Dump,1995/5/1"]), date("2018/11/1"),
+            employees(&["Bernard,Trump,1992/11/1"]))
     )]
     fn should_send_email(just_one_call: NoMoreThanOneCallService, repo: RcEmployees, date: NaiveDate, expected: RcEmployees) {
         let service = Rc::new(just_one_call);
