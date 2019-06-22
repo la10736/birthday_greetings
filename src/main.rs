@@ -3,37 +3,22 @@
 
 use chrono::{NaiveDate, Local, Datelike};
 
+mod repositories;
+use repositories::*;
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-struct Employ{
+pub struct Employ{
     name: String,
     surname: String,
-    birthday: NaiveDate
+    birthday: NaiveDate,
+    email: String,
 }
 
 impl Employ {
-    pub fn new(name: &str, surname: &str, birthday: NaiveDate) -> Self {
-        Employ{ name: name.to_owned(), surname: surname.to_owned(), birthday }
+    pub fn new(name: &str, surname: &str, birthday: NaiveDate, email: &str) -> Self {
+        Employ{ name: name.to_owned(), surname: surname.to_owned(), birthday, email: email.to_owned() }
     }
 }
-
-trait Repository {
-    fn entries<'iter, 's:'iter>(&'s self) -> Box<dyn Iterator<Item=&'s Employ> + 'iter>;
-}
-
-struct CsvRepository {}
-
-impl Repository for CsvRepository {
-    fn entries<'iter, 's:'iter>(&'s self) -> Box<dyn Iterator<Item=&'s Employ> + 'iter> {
-        unimplemented!()
-    }
-}
-
-impl CsvRepository {
-    pub fn by_path(path: impl AsRef<str>) -> Result<Self, String> {
-        Ok(Self {})
-    }
-}
-
 
 trait SendService {
     fn send(&self, employ: &Employ);
@@ -157,12 +142,13 @@ mod test {
     impl<S: AsRef<str>> From<S> for Employ {
 
         fn from(s: S) -> Self {
-            let mut data = s.as_ref().splitn(3, ',');
+            let mut data = s.as_ref().splitn(4, ',');
             let name = data.next().expect("Cannot find name").trim();
             let surname = data.next().expect("Cannot find surname").trim();
             let birth = date(data.next().expect("Cannot find birth date"));
+            let email = data.next().unwrap_or_default();
 
-            return Employ::new(name, surname, birth)
+            return Employ::new(name, surname, birth, email)
         }
     }
 

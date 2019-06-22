@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 chrono = "*"
+csv = "*"
 
 [dev-dependencies]
 temp_testdir = "0.2"
