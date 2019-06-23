@@ -7,6 +7,8 @@ edition = "2018"
 [dependencies]
 chrono = "*"
 csv = "*"
+lettre = "0.9"
+lettre_email = "0.9"
 
 [dev-dependencies]
 temp_testdir = "0.2"

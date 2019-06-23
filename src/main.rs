@@ -23,12 +23,13 @@ impl<R: Repository, S: SendService> BirthdayGreetingService<R, S> {
         Self { repository, send_service }
     }
 
-    pub fn send_greetings(&self, date: NaiveDate) {
+    pub fn send_greetings(&self, date: NaiveDate) -> Result<(), String >{
         let is_birthday = |e: &&Employ| e.birthday.day() == date.day() && e.birthday.month() == date.month();
 
         self.repository.entries()
             .filter(is_birthday)
-            .for_each(|e| self.send_service.send(e))
+            .map(|e| self.send_service.send(e) )
+            .collect()
     }
 }
 
@@ -89,17 +90,18 @@ mod test {
     #[derive(Default)]
     struct NotCallService;
     impl SendService for NotCallService {
-        fn send(&self, employ: &Employ) {
+        fn send(&self, employ: &Employ) -> Result<(), String>{
             panic!(format!("Should never call {:?}", employ))
         }
     }
     #[derive(Default)]
     struct NoMoreThanOneCallService { calls: RefCell<HashSet<Employ>> }
     impl SendService for NoMoreThanOneCallService {
-        fn send(&self, employ: &Employ) {
+        fn send(&self, employ: &Employ) -> Result<(), String>{
             if !self.calls.borrow_mut().insert(employ.clone()) {
                 panic!("Already sent to {:?}", employ)
             }
+            Ok(())
         }
     }
     impl NoMoreThanOneCallService {
@@ -109,7 +111,7 @@ mod test {
     }
 
     impl <SS: SendService>  SendService for Rc<SS> {
-        fn send(&self, entry: &Employ) {
+        fn send(&self, entry: &Employ) -> Result<(), String>{
             let ss: &SS = self.borrow();
             ss.send(entry)
         }

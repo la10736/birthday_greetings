@@ -8,6 +8,7 @@ use std::ops::Add;
 use std::error::Error;
 use json::{self, JsonValue};
 use std::marker::PhantomData;
+use std::borrow::Cow;
 
 static APP_PATH: &'static str = "target/debug/birthday_greetings";
 static SMTP_DOCKER_IMAGE: &'static str = "fake_smtp";
@@ -44,7 +45,6 @@ impl<'a> ExecuteDockerCommand for &'a mut Command {
 
 impl DockerCommand {
     pub fn start(&self, image: &str) -> Result<String, String> {
-
         Command::new("docker")
             .arg("run")
             .arg("-d")
@@ -93,7 +93,7 @@ impl DockerCommand {
             .arg("-t").arg(name)
             .arg(path.as_ref())
             .execute(&format!("On build for image {} at {}",
-                                               name, path.as_ref().to_string_lossy()))
+                              name, path.as_ref().to_string_lossy()))
             .map(|_| ())
     }
 }
@@ -147,7 +147,7 @@ impl SmtpServer<Initialized> {
         let end = chrono::Local::now() + timeout;
         while chrono::Local::now() < end {
             if predicate(&self.logs()?) {
-                return Ok(self)
+                return Ok(self);
             }
         }
         Err(format!("Cannot find given predicate in logs after {} ms", timeout.num_milliseconds()))
@@ -180,26 +180,36 @@ fn smtp_server() -> SmtpServer<Initialized> {
         .expect("Cannot init smtp server")
 }
 
+pub trait Stringable {
+    fn str(&self) -> Cow<str>;
+}
+
+impl<B: AsRef<[u8]>> Stringable for B {
+    fn str(&self) -> Cow<str> {
+        String::from_utf8_lossy(self.as_ref())
+    }
+}
+
 #[test]
 fn should_send_one_email_to_paolino_paperino() {
     let employees = "tests/resources/employees.csv";
-    let temp = TempDir::default();
+    let temp = TempDir::default().permanent();
     let mut file_path = PathBuf::from(temp.as_ref());
     file_path.push("employees.csv");
     std::fs::copy(employees, &file_path)
         .expect(&format!("Cannot copy files {} -> {}", employees, file_path.to_string_lossy()));
 
     let mut f = OpenOptions::new()
-        .write(true)
+        .append(true)
         .open(file_path.clone())
         .expect(&format!("Cannot open {}", file_path.to_string_lossy()));
 
-    write!(f, "Paolino, Paperino, {}, paolino.paperino@dmail.com",
+    write!(f, "Paolino, Paperino, {}, paolino.paperino@dmail.com\n",
            chrono::Local::today()
                .with_year(1920).unwrap()
                .format("%Y/%m/%d").to_string())
         .expect("Cannot write entry");
-    write!(f, "Paperone, De Paperoni, {}, paperon.depaperoni@dmail.com",
+    write!(f, "Paperone, De Paperoni, {}, paperon.depaperoni@dmail.com\n",
            chrono::Local::today()
                .add(Duration::days(1))
                .with_year(1867).unwrap()
@@ -209,11 +219,17 @@ fn should_send_one_email_to_paolino_paperino() {
 
     let smtp_server = smtp_server();
 
-    Command::new(&Path::new(APP_PATH))
-        .arg(employees)
-        .arg(dbg!(&smtp_server.address().unwrap()))
-        .output()
-        .expect(&format!("Cannot start App '{}'", APP_PATH));
+    std::env::set_var("SMTP_SERVER", &smtp_server.address().unwrap());
+
+    let mut cmd = Command::new(&Path::new(APP_PATH));
+    cmd.arg(file_path);
+
+    let out = cmd.output().expect(&format!("Cannot start App '{}'", APP_PATH));
+
+    assert!(out.status.success(), format!(r#"Run {:#?} FAILED with {:?}
+    stdout: {}
+    stderr: {}
+    "#, cmd, out.status.code(), out.stdout.str(), out.stderr.str()));
 
     let logs = smtp_server.logs().expect("Cannot read smtp server logs");
 
